@@ -3,7 +3,7 @@
 A small Express API providing CRUD endpoints for a "plants" resource.
 Built as a full-stack CRUD exercise — this is the backend half; the
 matching frontend lives in a separate repo:
-[plant-care](https://github.com/yourusername/plant-care).
+[plant-care](https://github.com/muzzammilahmed18/plant-care).
 
 ## Tech stack
 
