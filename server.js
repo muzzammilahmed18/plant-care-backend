@@ -2,6 +2,8 @@ const express = require("express");
 const cors = require("cors");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const multer = require("multer");
+const path = require("path");
 
 const app = express();
 const PORT = 5000;
@@ -11,8 +13,33 @@ const PORT = 5000;
 // treat this as a placeholder you'd swap out before ever deploying for real.
 const JWT_SECRET = "plantcare-dev-secret-change-this-in-production";
 
+const CATEGORY_OPTIONS = ["Succulent", "Fern", "Flowering", "Foliage", "Herb", "Other"];
+
 app.use(cors());
 app.use(express.json());
+
+// Serve uploaded photos as static files, e.g. GET /uploads/168...-fig.jpg
+app.use("/uploads", express.static("uploads"));
+
+// ---- File upload config (multer) ----
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, "uploads/"),
+  filename: (req, file, cb) => {
+    const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${path.extname(file.originalname)}`;
+    cb(null, uniqueName);
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB max
+  fileFilter: (req, file, cb) => {
+    if (!file.mimetype.startsWith("image/")) {
+      return cb(new Error("Only image files are allowed for the photo"));
+    }
+    cb(null, true);
+  },
+});
 
 // ---- In-memory "databases" — reset every time the server restarts ----
 let users = []; // { id, email, passwordHash }
@@ -37,6 +64,44 @@ function authenticateToken(req, res, next) {
     req.userId = payload.userId;
     next();
   });
+}
+
+// ---- Server-side validation, mirrors the frontend's rules ----
+// Only validates fields that are actually present, so a quick "mark as
+// watered" patch (which only sends lastWateredDate) doesn't get rejected
+// for missing name/category/etc.
+function validatePlantInput(body, { isCreate }) {
+  const errors = {};
+
+  if (isCreate || body.name !== undefined) {
+    if (!body.name || body.name.trim().length < 2) {
+      errors.name = "Name must be at least 2 characters.";
+    }
+  }
+
+  if (isCreate || body.wateringFrequencyDays !== undefined) {
+    const freq = Number(body.wateringFrequencyDays);
+    if (!body.wateringFrequencyDays || isNaN(freq) || freq < 1) {
+      errors.wateringFrequencyDays = "Watering frequency must be a positive number.";
+    }
+  }
+
+  if (isCreate || body.category !== undefined) {
+    if (!body.category || !CATEGORY_OPTIONS.includes(body.category)) {
+      errors.category = `Category must be one of: ${CATEGORY_OPTIONS.join(", ")}.`;
+    }
+  }
+
+  if (isCreate || body.dateAcquired !== undefined) {
+    const date = new Date(body.dateAcquired);
+    if (!body.dateAcquired || isNaN(date.getTime())) {
+      errors.dateAcquired = "Enter a valid date.";
+    } else if (date > new Date()) {
+      errors.dateAcquired = "Date acquired can't be in the future.";
+    }
+  }
+
+  return errors;
 }
 
 // ---- Auth routes ----
@@ -100,22 +165,27 @@ app.get("/plants/:id", authenticateToken, (req, res) => {
 });
 
 // POST /plants — create (attached to the logged-in user)
-app.post("/plants", authenticateToken, (req, res) => {
-  const { name, species, wateringFrequencyDays, lastWateredDate } = req.body;
-
-  if (!name || !wateringFrequencyDays) {
-    return res
-      .status(400)
-      .json({ error: "name and wateringFrequencyDays are required" });
+// upload.single("photo") parses multipart form data (name, category, etc.
+// arrive in req.body as text fields; the image arrives as req.file).
+app.post("/plants", authenticateToken, upload.single("photo"), (req, res) => {
+  const errors = validatePlantInput(req.body, { isCreate: true });
+  if (Object.keys(errors).length > 0) {
+    return res.status(400).json({ errors });
   }
+
+  const { name, species, wateringFrequencyDays, category, dateAcquired, notes, lastWateredDate } = req.body;
 
   const newPlant = {
     id: String(nextPlantId++),
     userId: req.userId,
-    name,
+    name: name.trim(),
     species: species || "",
+    category,
+    dateAcquired,
+    notes: notes || "",
     wateringFrequencyDays: Number(wateringFrequencyDays),
     lastWateredDate: lastWateredDate || new Date().toISOString(),
+    photoUrl: req.file ? `/uploads/${req.file.filename}` : null,
   };
 
   plants.push(newPlant);
@@ -123,13 +193,24 @@ app.post("/plants", authenticateToken, (req, res) => {
 });
 
 // PUT /plants/:id — update (only if it belongs to this user)
-app.put("/plants/:id", authenticateToken, (req, res) => {
+// Also accepts multipart data, so the same route handles both a full
+// edit (with a new photo) and a quick "mark as watered" patch.
+app.put("/plants/:id", authenticateToken, upload.single("photo"), (req, res) => {
   const plant = plants.find((p) => p.id === req.params.id && p.userId === req.userId);
   if (!plant) {
     return res.status(404).json({ error: "Plant not found" });
   }
 
+  const errors = validatePlantInput(req.body, { isCreate: false });
+  if (Object.keys(errors).length > 0) {
+    return res.status(400).json({ errors });
+  }
+
   Object.assign(plant, req.body);
+  if (req.file) {
+    plant.photoUrl = `/uploads/${req.file.filename}`;
+  }
+
   res.json(plant);
 });
 
@@ -142,6 +223,14 @@ app.delete("/plants/:id", authenticateToken, (req, res) => {
 
   plants.splice(index, 1);
   res.json({ success: true });
+});
+
+// ---- Error handler — catches multer errors (bad file type, too large) ----
+app.use((err, req, res, next) => {
+  if (err) {
+    return res.status(400).json({ error: err.message || "Something went wrong" });
+  }
+  next();
 });
 
 app.listen(PORT, () => {
