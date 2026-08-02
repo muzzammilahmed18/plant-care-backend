@@ -164,16 +164,27 @@ app.get("/plants/:id", authenticateToken, (req, res) => {
   res.json(plant);
 });
 
+// POST /upload — a standalone endpoint just for uploading a photo.
+// Used by the frontend's drag-and-drop component BEFORE the plant form
+// is even submitted: upload the file, get back a URL, then that URL
+// just rides along as a plain string field on the plant itself.
+app.post("/upload", authenticateToken, upload.single("photo"), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "No file received" });
+  }
+  res.status(201).json({ url: `/uploads/${req.file.filename}` });
+});
+
 // POST /plants — create (attached to the logged-in user)
-// upload.single("photo") parses multipart form data (name, category, etc.
-// arrive in req.body as text fields; the image arrives as req.file).
-app.post("/plants", authenticateToken, upload.single("photo"), (req, res) => {
+// Plain JSON now — photoUrl is just a string, since the actual upload
+// already happened separately via POST /upload.
+app.post("/plants", authenticateToken, (req, res) => {
   const errors = validatePlantInput(req.body, { isCreate: true });
   if (Object.keys(errors).length > 0) {
     return res.status(400).json({ errors });
   }
 
-  const { name, species, wateringFrequencyDays, category, dateAcquired, notes, lastWateredDate } = req.body;
+  const { name, species, wateringFrequencyDays, category, dateAcquired, notes, lastWateredDate, photoUrl } = req.body;
 
   const newPlant = {
     id: String(nextPlantId++),
@@ -185,7 +196,7 @@ app.post("/plants", authenticateToken, upload.single("photo"), (req, res) => {
     notes: notes || "",
     wateringFrequencyDays: Number(wateringFrequencyDays),
     lastWateredDate: lastWateredDate || new Date().toISOString(),
-    photoUrl: req.file ? `/uploads/${req.file.filename}` : null,
+    photoUrl: photoUrl || null,
   };
 
   plants.push(newPlant);
@@ -193,9 +204,7 @@ app.post("/plants", authenticateToken, upload.single("photo"), (req, res) => {
 });
 
 // PUT /plants/:id — update (only if it belongs to this user)
-// Also accepts multipart data, so the same route handles both a full
-// edit (with a new photo) and a quick "mark as watered" patch.
-app.put("/plants/:id", authenticateToken, upload.single("photo"), (req, res) => {
+app.put("/plants/:id", authenticateToken, (req, res) => {
   const plant = plants.find((p) => p.id === req.params.id && p.userId === req.userId);
   if (!plant) {
     return res.status(404).json({ error: "Plant not found" });
@@ -207,10 +216,6 @@ app.put("/plants/:id", authenticateToken, upload.single("photo"), (req, res) => 
   }
 
   Object.assign(plant, req.body);
-  if (req.file) {
-    plant.photoUrl = `/uploads/${req.file.filename}`;
-  }
-
   res.json(plant);
 });
 
