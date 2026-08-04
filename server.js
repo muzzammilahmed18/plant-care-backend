@@ -238,6 +238,13 @@ app.use((err, req, res, next) => {
   next();
 });
 
-app.listen(PORT, () => {
-  console.log(`PlantCare API running on http://localhost:${PORT}`);
-});
+// Only start listening when this file is run directly (node server.js),
+// not when it's imported by a test file — Supertest just needs the `app`
+// object itself, it makes fake requests without a real port being open.
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`PlantCare API running on http://localhost:${PORT}`);
+  });
+}
+
+module.exports = app;
