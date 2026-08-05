@@ -4,8 +4,6 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const multer = require("multer");
 const path = require("path");
-
-const path = require("path");
 const fs = require("fs");
 
 // The uploads/ folder is git-ignored (uploaded files shouldn't be
