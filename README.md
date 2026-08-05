@@ -1,21 +1,42 @@
 # PlantCare — Backend API
 
-An Express API providing CRUD endpoints for a "plants" resource, secured
-behind JWT authentication, with server-side validation, image uploads,
-and automated tests. Built as a full-stack internship project, in
-stages: CRUD → authentication → validation & uploads → decoupled upload
-endpoint → automated testing. The matching frontend lives in a separate
-repo: [plant-care](https://github.com/muzzammilahmed18/plant-care).
+🔗 **Live API:** https://plant-care-backend-6qns.onrender.com
+🌱 **Live app:** https://plant-care-six-xi.vercel.app
+🔗 **Frontend repo:** https://github.com/muzzammilahmed18/plant-care
+
+An Express API providing authenticated CRUD endpoints for a "plants"
+resource, with image uploads and automated tests. The matching frontend
+lives in a separate repo (linked above).
+
+> ⚠️ **Free tier note:** this runs on Render's free plan, which spins
+> down after inactivity. The first request after idle time can take
+> 30-60 seconds to respond while it wakes up. Storage is also
+> **in-memory and ephemeral** — restarting the service (which happens
+> automatically after a spin-down) clears all users, plants, and
+> uploaded photos. This is an intentional simplification for a learning
+> project; a persistent deployment would use a real database and cloud
+> object storage instead.
+
+## Architecture overview
+
+```
+Client (React, Vercel)
+      │  HTTPS + JWT
+      ▼
+Express app (Render)
+ ├─ /signup, /login        → bcrypt + jsonwebtoken
+ ├─ /upload                → multer, saves to uploads/
+ └─ /plants (CRUD)          → scoped per-user via JWT payload
+      │
+      ▼
+In-memory arrays (users, plants) — no external database
+```
 
 ## Tech stack
 
-- Node.js + Express
-- `bcrypt` (password hashing), `jsonwebtoken` (JWT auth), `multer`
-  (file uploads), `cors`
-- `dotenv` — loads config from a `.env` file locally
-- In-memory storage (plain arrays) — data resets whenever the server
-  restarts
-- Vitest + Supertest for automated tests
+Node.js + Express, `bcrypt` (password hashing), `jsonwebtoken` (JWT
+auth), `multer` (file uploads), `cors`, `dotenv` (config), Vitest +
+Supertest (tests).
 
 ## Configuration
 
@@ -24,67 +45,59 @@ Copy `.env.example` to `.env`:
 JWT_SECRET=your-secret-here
 PORT=5000
 ```
-In production, these are set directly in your hosting platform's
-dashboard (Render, Railway, etc.) instead of committed to the repo —
-`.env` is git-ignored for exactly this reason.
+In production these are set directly in Render's dashboard, not
+committed to the repo — `.env` is git-ignored.
+
+## Auth endpoints
+
+| Method | Route      | Description                                    |
+|--------|------------|------------------------------------------------|
+| POST   | `/signup`  | Create an account, returns `{ token, email }`  |
+| POST   | `/login`   | Log into an existing account, returns a token  |
+
+## Upload endpoint
+
+| Method | Route      | Description                              |
+|--------|------------|------------------------------------------|
+| POST   | `/upload`  | Upload a single image, returns `{ url }` |
+
+A standalone endpoint — the frontend uploads a photo here first (with
+its own progress bar), then passes the resulting URL along as a plain
+string field when creating a plant. Rejects non-image files and
+anything over 5MB.
+
+## Plant endpoints (all require a valid token)
+
+| Method | Route          | Description                            |
+|--------|----------------|----------------------------------------|
+| GET    | `/plants`      | Get all plants belonging to this user  |
+| GET    | `/plants/:id`  | Get a single plant (must belong to you)|
+| POST   | `/plants`      | Create a new plant (plain JSON)        |
+| PUT    | `/plants/:id`  | Update a plant (plain JSON)            |
+| DELETE | `/plants/:id`  | Delete a plant (must belong to you)    |
+
+## Plant fields & validation
+
+| Field                    | Required | Rule                                            |
+|--------------------------|----------|-------------------------------------------------|
+| `name`                   | yes      | at least 2 characters                           |
+| `species`                | no       | free text                                       |
+| `category`               | yes      | one of: Succulent, Fern, Flowering, Foliage, Herb, Other |
+| `wateringFrequencyDays`  | yes      | positive number                                 |
+| `dateAcquired`           | yes      | valid date, cannot be in the future             |
+| `notes`                  | no       | free text                                       |
+| `photoUrl`               | no       | string, set via a prior `/upload` call          |
 
 ## Testing
 
 ```bash
 npm test
 ```
-
-This runs 6 tests against the actual Express app (via Supertest — no
-real server/port needed), covering both happy paths and failure cases:
-
-- `POST /signup` with valid data → 201 + token
-- `POST /signup` with a short password → 400
-- `POST /login` with wrong credentials → 401
-- `GET /plants` without a token → 401
-- `POST /plants` with valid data + token → 201
-- `POST /plants` with an invalid category → 400 with field errors
-
-`server.js` exports the Express `app` separately from starting it
-(`app.listen` only runs when the file is executed directly, not when
-imported by a test) so tests can hit real routes without a live port.
-
-## Auth endpoints
-
-| Method | Route      | Description                                    |
-|--------|------------|-------------------------------------------------|
-| POST   | `/signup`  | Create an account, returns `{ token, email }`  |
-| POST   | `/login`   | Log into an existing account, returns a token  |
-
-## Upload endpoint
-
-| Method | Route      | Description                                       |
-|--------|------------|-----------------------------------------------------|
-| POST   | `/upload`  | Upload a single image, returns `{ url }`           |
-
-A standalone endpoint — the frontend uploads a photo here first, then
-passes the resulting URL along when creating a plant.
-
-## Plant endpoints (all require a valid token)
-
-| Method | Route          | Description                            |
-|--------|----------------|------------------------------------------|
-| GET    | `/plants`      | Get all plants belonging to this user  |
-| GET    | `/plants/:id`  | Get a single plant (must belong to you) |
-| POST   | `/plants`      | Create a new plant (plain JSON)        |
-| PUT    | `/plants/:id`  | Update a plant (plain JSON)           |
-| DELETE | `/plants/:id`  | Delete a plant (must belong to you)   |
-
-## Plant fields & validation
-
-| Field                    | Required | Rule                                            |
-|---------------------------|----------|--------------------------------------------------|
-| `name`                     | yes      | at least 2 characters                          |
-| `species`                    | no       | free text                                       |
-| `category`                     | yes      | one of: Succulent, Fern, Flowering, Foliage, Herb, Other |
-| `wateringFrequencyDays`          | yes      | positive number                                |
-| `dateAcquired`                     | yes      | valid date, cannot be in the future            |
-| `notes`                              | no       | free text                                       |
-| `photoUrl`                             | no       | string, set via a prior `/upload` call         |
+6 tests via Vitest + Supertest, covering happy paths and failure cases:
+signup validation, login rejection, protected routes without a token,
+plant creation with valid/invalid data. `server.js` exports the Express
+`app` separately from `app.listen`, so tests hit real routes without a
+live port.
 
 ## Run locally
 
@@ -93,11 +106,19 @@ npm install
 mkdir -p uploads
 node server.js
 ```
+Server runs on `http://localhost:5000` by default. The `uploads/` folder
+is also auto-created at startup if missing, so this step isn't strictly
+required — useful since `uploads/` is git-ignored and won't exist on a
+fresh clone or deployment.
 
-Server runs on `http://localhost:5000` by default.
+## Deploy
 
-## Notes
+Deployed on **Render** as a Web Service, connected directly to this
+GitHub repo:
+- Build command: `npm install`
+- Start command: `node server.js`
+- Environment variable: `JWT_SECRET` set in Render's dashboard
+- `PORT` is provided automatically by Render — `server.js` reads
+  `process.env.PORT` with a local fallback of `5000`
 
-- `uploads/` and `.env` are both git-ignored
-- `JWT_SECRET` falls back to a placeholder for local dev convenience, but
-  a real deployment must set a proper one via the environment
+Every push to `main` triggers an automatic redeploy.
