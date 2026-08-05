@@ -5,6 +5,16 @@ const jwt = require("jsonwebtoken");
 const multer = require("multer");
 const path = require("path");
 
+const path = require("path");
+const fs = require("fs");
+
+// The uploads/ folder is git-ignored (uploaded files shouldn't be
+// committed), so it won't exist on a fresh deployment unless we create
+// it ourselves at startup.
+if (!fs.existsSync("uploads")) {
+  fs.mkdirSync("uploads");
+}
+
 const app = express();
 const PORT = 5000;
 
